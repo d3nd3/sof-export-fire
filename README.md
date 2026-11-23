@@ -134,3 +134,5 @@ python3 -m py_compile sof_export_fire.py
 
 Dispatch, dedup, name filtering, alias ignoring, and `--exec` rendering were
 verified against a simulated `user-<port>/sofplus/data/ext_trigger/` tree.
+
+Prefer pictures? Start with **[HUMANS.md](HUMANS.md)**.

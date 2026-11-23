@@ -1,0 +1,77 @@
+# sof-export-fire — system overview (source of truth).
+# Render: scripts/render-diagram.sh  (svg: light+dark, png: dark, for gpm desktop)
+# Colours come from the d2 theme plus stroke-only classes, so light and dark both stay legible.
+
+title: |md
+  **sof-export-fire** — one watcher for the in-game `ext_trigger` files, fanned out to print, exec or TCP
+| {near: top-center}
+
+direction: right
+grid-columns: 2
+grid-rows: 2
+
+entry: Entry points {
+  direction: down
+  cli: "`sof_export_fire.py --root <sof> --print` — flags: `--trigger`, `--exec`, `--serve`"
+  lib: "`TriggerWatcher(root, on_event=...)` — the library API, one file, no install"
+  client: a TCP subscriber — one `subscribe` line, then JSON events"
+  main: "`main()` — builds the hook list: print · exec · `server.publish`"
+}
+core: Core · watch, gate, dedup, fan out {
+  direction: down
+  observer: "`watchdog` `Observer`, recursive on the SoF root; handler on created + modified"
+  gate: "path must hold `ext_trigger`, end `.cfg`, match `user-(\\d+)`; `last.cfg` skipped"
+  cooldown: "per path 1 s, then a 0.5 s settle sleep so a half-written cfg is not read"
+  parse: "`set \"key\" \"value\"` lines, latin-1, no name means no event"
+  build: "`TriggerEvent` — name, seq, slot, args 1-3, hostname, map, data_dir"
+  dedup: "`_last_seq` per path — a redelivery only counts when the seq advances"
+  fanout: "`print_event` · `exec_hook_factory` (`subprocess`) · `EventServer.publish`"
+}
+state: State {
+  direction: down
+  cfg: "`user-<port>/sofplus/data/ext_trigger/*.cfg` — one file per trigger name, overwritten" {
+    shape: cylinder
+  }
+  alias_file: "`last.cfg` — alias of the newest fire, never read by the watcher" {
+    shape: cylinder
+  }
+  seq: "`_last_seq` / `_last_time` — plain dicts in memory, lost on restart" {
+    shape: cylinder
+  }
+}
+ext: External {
+  direction: down
+  addon: "`ext_trigger.func` (from `sof-profiles`) — the in-game half, writes `<name>.cfg`"
+  server: the running SoF server process — fires a trigger, bumps `_ext_trigger_seq`
+  consumer: "`sof-discord-bot` — the reference consumer, subscribes over TCP"
+  unit: "`systemd/sof-export-fire.service` — ships with the bot, venv + `--serve`"
+}
+
+entry.cli -> core.observer
+entry.lib -> core.observer
+core.observer -> core.gate
+core.gate -> core.cooldown
+core.cooldown -> core.parse
+core.parse -> core.build
+core.build -> core.dedup
+core.dedup -> core.fanout
+state.cfg -> core.gate: "new write"
+core.dedup -> state.seq
+core.fanout -> ext.consumer: "JSON per event"
+ext.server -> state.cfg: "writes on trigger"
+entry.client -> core.fanout: "subscribe"
+
+classes: {
+  store: {style.stroke: "#1c7ed6"; style.stroke-width: 2}
+  ext: {style.stroke: "#7048e8"; style.stroke-dash: 3}
+  dead: {style.stroke: "#868e96"; style.stroke-dash: 2}
+}
+
+state.cfg.class: store
+state.alias_file.class: store
+state.seq.class: store
+ext.addon.class: ext
+ext.server.class: ext
+ext.consumer.class: ext
+ext.unit.class: ext
+state.alias_file.class: dead
